@@ -49,6 +49,28 @@ class BotNotifier:
         elapsed = utcnow() - last
         return elapsed < timedelta(minutes=self._cooldown_minutes)
 
+    async def _fetch_token_name(self, contract: str, chain: str) -> str:
+        """Look up token name/symbol from Dexscreener. Returns '' on failure."""
+        dex_chain = "solana" if chain == "solana" else "ethereum"
+        url = f"https://api.dexscreener.com/latest/dex/tokens/{contract}"
+        try:
+            session = await self._get_session()
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                if resp.status != 200:
+                    return ""
+                data = await resp.json()
+                pairs = data.get("pairs") or []
+                if pairs:
+                    base = pairs[0].get("baseToken", {})
+                    name = base.get("name", "")
+                    symbol = base.get("symbol", "")
+                    if symbol and name:
+                        return f"{name} ({symbol})"
+                    return symbol or name or ""
+        except Exception:
+            logger.debug("Failed to fetch token name for %s", contract[:12])
+        return ""
+
     async def notify(self, tokens: list[TrendingToken]) -> int:
         """Send alerts for tokens not on cooldown. Returns count sent."""
         sent = 0
@@ -58,7 +80,8 @@ class BotNotifier:
                 logger.debug("Skipping %s — on cooldown", token.contract[:12])
                 continue
 
-            msg = self._format_alert(token)
+            token_name = await self._fetch_token_name(token.contract, token.chain)
+            msg = self._format_alert(token, token_name)
 
             if self._dry_run:
                 logger.info("[DRY-RUN] Would send bot alert:\n%s", msg)
@@ -111,19 +134,50 @@ class BotNotifier:
         return len(expired)
 
     @staticmethod
-    def _format_alert(token: TrendingToken) -> str:
+    def _format_alert(token: TrendingToken, token_name: str = "") -> str:
         chain_display = token.chain.upper()
         velocity_pct = (
             f"{token.velocity * 100:+.0f}%" if token.velocity else "NEW"
         )
+        ca = token.contract
+        links = BotNotifier._build_links(token.chain, ca)
+        name_line = f"🪙 *Token:* {token_name}\n" if token_name else ""
 
         return (
             f"🚨 *TRENDING TOKEN DETECTED*\n"
             f"\n"
             f"🔗 *Chain:* {chain_display}\n"
-            f"📋 *Contract:* `{token.contract}`\n"
+            f"{name_line}"
+            f"📋 *Contract:* `{ca}`\n"
             f"💬 *Mentions (5m):* {token.mention_count}\n"
             f"👥 *Unique Groups:* {token.unique_chats}\n"
             f"📈 *Velocity:* {velocity_pct}\n"
             f"⭐ *Score:* {token.score:.1f}\n"
+            f"\n"
+            f"🔗 {links}\n"
         )
+
+    @staticmethod
+    def _build_links(chain: str, contract: str) -> str:
+        """Build chain-appropriate explorer/tool links."""
+        if chain == "solana":
+            return (
+                f"[DS](https://dexscreener.com/solana/{contract})"
+                f" | [GMGN](https://gmgn.ai/sol/token/{contract})"
+                f" | [PH](https://photon-sol.tinyastro.io/en/lp/{contract})"
+                f" | [AXI](https://axiom.trade/t/{contract})"
+                f" | [BullX](https://bullx.io/terminal?chainId=1399811149&address={contract})"
+            )
+        elif chain == "evm":
+            # Default to Ethereum; works for most EVM chains
+            return (
+                f"[DS](https://dexscreener.com/ethereum/{contract})"
+                f" | [GMGN](https://gmgn.ai/eth/token/{contract})"
+                f" | [DT](https://www.dextools.io/app/en/ether/pair-explorer/{contract})"
+                f" | [Etherscan](https://etherscan.io/token/{contract})"
+            )
+        else:
+            return (
+                f"[DS](https://dexscreener.com/{chain}/{contract})"
+                f" | [GMGN](https://gmgn.ai/{chain}/token/{contract})"
+            )
