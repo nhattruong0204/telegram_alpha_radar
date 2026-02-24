@@ -43,7 +43,7 @@ class TelegramListener:
     async def start(self) -> TelegramClient:
         """Authenticate and begin listening."""
         self._client = TelegramClient(
-            self._config.session_name,
+            self._config.session_path,
             self._config.api_id,
             self._config.api_hash,
             auto_reconnect=True,

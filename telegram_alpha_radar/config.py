@@ -48,6 +48,16 @@ class TelegramConfig:
     session_name: str = field(
         default_factory=lambda: _env("TELEGRAM_SESSION_NAME", "alpha_radar")
     )
+    session_dir: str = field(
+        default_factory=lambda: _env("TELEGRAM_SESSION_DIR", "")
+    )
+
+    @property
+    def session_path(self) -> str:
+        """Full path for the Telethon .session file."""
+        if self.session_dir:
+            return os.path.join(self.session_dir, self.session_name)
+        return self.session_name
 
 
 @dataclass(frozen=True, slots=True)

@@ -12,10 +12,11 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY . /app/telegram_alpha_radar/
+COPY telegram_alpha_radar/ telegram_alpha_radar/
 
 # Non-root user
-RUN useradd --create-home appuser
+RUN useradd --create-home appuser && \
+    mkdir -p /app/sessions && chown appuser:appuser /app/sessions
 USER appuser
 
 # Health + Prometheus
