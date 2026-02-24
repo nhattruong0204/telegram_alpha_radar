@@ -23,7 +23,7 @@ from telegram_alpha_radar.core.types import Chain, DetectorRegistry
 from telegram_alpha_radar.core.utils import setup_logging, utcnow
 from telegram_alpha_radar.detectors import EvmDetector, SolanaDetector
 from telegram_alpha_radar.listener import TelegramListener
-from telegram_alpha_radar.notifier import TelegramNotifier
+from telegram_alpha_radar.notifier import BotNotifier, TelegramNotifier
 from telegram_alpha_radar.storage import PostgresRepository
 from telegram_alpha_radar.trending import TrendingEngine
 
@@ -76,6 +76,7 @@ class AlphaRadarApp:
         ]
         self._listener: TelegramListener | None = None
         self._notifier: TelegramNotifier | None = None
+        self._bot_notifier: BotNotifier | None = None
         self._engine: TrendingEngine | None = None
 
         # Background tasks
@@ -111,6 +112,24 @@ class AlphaRadarApp:
             config=self._config.trending,
             dry_run=self._dry_run,
         )
+
+        # 3b. Bot API notifier (sends alerts via Telegram Bot)
+        if self._config.bot_notifier.enabled:
+            if not self._config.bot_notifier.token:
+                logger.error("BOT_NOTIFIER_ENABLED=true but BOT_TOKEN is missing")
+            elif not self._config.bot_notifier.chat_id:
+                logger.error("BOT_NOTIFIER_ENABLED=true but BOT_ALERT_CHAT_ID is missing")
+            else:
+                self._bot_notifier = BotNotifier(
+                    bot_config=self._config.bot_notifier,
+                    trending_config=self._config.trending,
+                    dry_run=self._dry_run,
+                )
+                logger.info(
+                    "Bot notifier enabled — alerts to chat %s via @%s",
+                    self._config.bot_notifier.chat_id,
+                    "bot",
+                )
 
         # 4. Trending engine
         self._engine = TrendingEngine(
@@ -163,6 +182,9 @@ class AlphaRadarApp:
 
         if self._listener:
             await self._listener.stop()
+
+        if self._bot_notifier:
+            await self._bot_notifier.close()
 
         await self._repo.close()
         logger.info("Shutdown complete")
@@ -231,6 +253,11 @@ class AlphaRadarApp:
                     sent = await self._notifier.notify(tokens)
                     self._alerts_sent += sent
 
+                    # Also send via Bot API if enabled
+                    if self._bot_notifier is not None:
+                        bot_sent = await self._bot_notifier.notify(tokens)
+                        self._alerts_sent += bot_sent
+
                     if PROM_AVAILABLE and self._config.metrics.enabled:
                         ALERTS_TOTAL.inc(sent)
                         TRENDING_GAUGE.labels(chain=chain_name).set(
@@ -239,6 +266,8 @@ class AlphaRadarApp:
 
                 # Cleanup expired cooldowns
                 self._notifier.cleanup_expired_cooldowns()
+                if self._bot_notifier is not None:
+                    self._bot_notifier.cleanup_expired_cooldowns()
 
             except asyncio.CancelledError:
                 break

@@ -124,6 +124,21 @@ class DexscreenerConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class BotNotifierConfig:
+    """Telegram Bot API notification settings."""
+
+    enabled: bool = field(
+        default_factory=lambda: _env_bool("BOT_NOTIFIER_ENABLED", False)
+    )
+    token: str = field(
+        default_factory=lambda: _env("BOT_TOKEN", "")
+    )
+    chat_id: str = field(
+        default_factory=lambda: _env("BOT_ALERT_CHAT_ID", "")
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class MetricsConfig:
     """Prometheus metrics settings."""
 
@@ -161,6 +176,7 @@ class AppConfig:
     trending: TrendingConfig = field(default_factory=TrendingConfig)
     filters: FilterConfig = field(default_factory=FilterConfig)
     dexscreener: DexscreenerConfig = field(default_factory=DexscreenerConfig)
+    bot_notifier: BotNotifierConfig = field(default_factory=BotNotifierConfig)
     metrics: MetricsConfig = field(default_factory=MetricsConfig)
     health: HealthConfig = field(default_factory=HealthConfig)
     log_level: str = field(

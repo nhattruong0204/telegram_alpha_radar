@@ -1,0 +1,51 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: alpha-radar-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: radar
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: alpha_radar
+    volumes:
+      - alpha_radar_pgdata:/var/lib/postgresql/data
+      - ./schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U radar -d alpha_radar"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - alpha-radar-network
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: alpha-radar-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+    volumes:
+      - ./sessions:/app/sessions
+    ports:
+      - "8081:8080"
+      - "9091:9090"
+    networks:
+      - alpha-radar-network
+
+volumes:
+  alpha_radar_pgdata:
+
+networks:
+  alpha-radar-network:
+    name: alpha-radar-network
+    driver: bridge
